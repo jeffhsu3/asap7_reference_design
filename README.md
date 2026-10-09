@@ -1,4 +1,6 @@
 # Reference Design for a modified version of ASAP7nm 
+Known differences between the DRM, verification decks, and routing collateral are tracked in [ASAP7 ecosystem discrepancies](ASAP7_ECOSYSTEM_DISCREPANCIES.md).
+
 This repository contains a reference block design for a modified version of the ASAP7nm library. The ASAP7nm library/PDK was developed by ASU and all credits go to them. 
 
 Here we provide a modified version of their 7nm technology. The differences are many:
