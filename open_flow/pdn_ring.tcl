@@ -6,7 +6,8 @@ set_voltage_domain -name CORE -power VDD -ground VSS
 define_pdn_grid -name stdcells -voltage_domains CORE -pins M7
 add_pdn_stripe -grid stdcells -layer M1 -width 0.018 -pitch 0.54 -offset 0 -followpins
 add_pdn_stripe -grid stdcells -layer M2 -width 0.018 -pitch 0.54 -offset 0 -followpins
-add_pdn_stripe -grid stdcells -layer M5 -width 0.12 -spacing 0.072 \
+# Minimum-width M5 straps keep the V4 cut aligned with its adjoining M5.
+add_pdn_stripe -grid stdcells -layer M5 -width 0.024 -spacing 0.072 \
     -pitch 5.904 -offset 0.300 -snap_to_grid
 add_pdn_stripe -grid stdcells -layer M6 -width 0.288 -spacing 0.096 \
     -pitch 6.0 -offset 0.513 -snap_to_grid -extend_to_core_ring
@@ -27,13 +28,17 @@ add_pdn_stripe -grid stdcells -layer M7 -width 0.288 \
     -offset [snap_grid [expr {$M7_pitch / 4}]] \
     -snap_to_grid -extend_to_core_ring
 
-# M6 is horizontal and M7 vertical in stock LambdaPDK ASAP7. Ring offsets
-# are measured from the core boundary; leave extra core-to-die margin for it.
+# M6 is horizontal and M7 vertical in stock LambdaPDK ASAP7. The ring's
+# 0.224 um spacing and per-side core offsets align its edges with the stock
+# gdscheck 32 nm grids and its wide-wire centres with 64 nm tracks. Offsets
+# are measured from the core boundary; leave core-to-die margin for the ring.
 add_pdn_ring -grid stdcells -layers {M6 M7} \
-    -widths {0.288 0.288} -spacings {0.192 0.192} \
-    -core_offsets {0.5 0.5}
+    -widths {0.288 0.288} -spacings {0.224 0.224} \
+    -core_offsets {0.484 0.528 0.532 0.522}
 
 add_pdn_connect -grid stdcells -layers {M1 M2}
-add_pdn_connect -grid stdcells -layers {M2 M5}
+# M4 is a pass-through pad for the M2->M5 stack: snap it to LambdaPDK's
+# routing tracks (12 nm y origin, 48 nm pitch) instead of centering on M2 rails.
+add_pdn_connect -grid stdcells -layers {M2 M5} -min_width_layers {M3 M4} -ongrid {M4}
 add_pdn_connect -grid stdcells -layers {M5 M6}
 add_pdn_connect -grid stdcells -layers {M6 M7}
