@@ -80,6 +80,130 @@ Every marker is a pair of minimum-width wires on neighbouring tracks. None depen
 
 **How the 1 nm overlaps arise.** The M4 wires end on V3/V4 vias, which sit on the 36 nm M3 track pitch (via centre x ≡ 9 nm mod 36). In 87 of the 119 1 nm `.S.5` overlaps, one wire extends 11 nm past its last via and the neighbour extends 44 nm past its first via, with the two vias two M3 tracks (72 nm) apart. The overlap is 11 + 44 + 18 (via width) − 72 = **1 nm**. Most remaining 1 nm cases are the same arithmetic with other extensions (e.g. 38/11 nm at 69 nm). `.S.4` is the same mechanism for tips on the same side: they land 6–39 nm apart (33 high-tip, 28 low-tip). The cause of the 44 nm extension has not been traced; a min-area extension for the M4 `AREA 0.002` rule is plausible but unverified.
 
-**LambdaPDK does not encode these rules.** The `LAYER M4` section of LambdaPDK's `asap7_tech.lef` (v0.2.22, which this flow loaded; v0.2.9 is identical) defines `SPACING 0.024`, a `LEF58_SPACING` end-of-line rule (`0.024 ENDOFLINE 0.025 WITHIN 0.04 ENDTOEND 0.04`), `LEF58_CORNERSPACING`, `LEF58_EOLKEEPOUT`, a wide-metal `SPACINGTABLE`, `RIGHTWAYONGRIDONLY` and `RECTONLY`. Nothing there corresponds to DRM `M4.S.5` (a parallel run of ≥44 nm on neighbouring tracks, or none) or `M4.S.4` (a ≥40 nm tip-to-tip offset between tips on the same side of overlapping wires). The router therefore has no constraint against these geometries, and a zero OpenROAD violation count says nothing about them. M5–M7 in LambdaPDK should be checked the same way before assuming they are covered.
+**LambdaPDK encodes these rules only approximately, and the approximation is disabled by rounding.** *(Corrected; an earlier version of this paragraph said the LEF has no such rule.)* The `LAYER M4` section of LambdaPDK's `asap7_tech.lef` (identical to ASAP7's `asap7_tech_1x_201209.lef`) has `LEF58_EOLKEEPOUT 0.025 EXTENSION 0.048 0.02425 0.048 CORNERONLY`: no corner of another shape within 48 nm either way of a line end, reaching 24.25 nm to the side. Since adjacent-track wires are 24 nm apart, this forbids a neighbouring tip near a line end, which covers both `M4.S.4` and `M4.S.5`. It is stricter than the DRM, because it also forbids aligned tips and a 40–48 nm stagger. However, the LEF declares `DATABASE MICRONS 1000`, and OpenROAD rounds 24.25 nm to 24, exactly the neighbour's edge. Its checker requires the corner to lie strictly inside the keep-out, so the rule never reaches the adjacent track. On the routed V6 cut-pitch trial database, `drt::check_drc` reports 0 M4/M5 keep-out violations as loaded. With the side extension set to 25 nm it reports 249 on M4 and 2 on M5, and every gdscheck `M4.S.4` (61), `M4.S.5` (153) and `M5.S.5` (1) marker matches one within 50 nm. The other 20 are presumably the stricter-than-DRM cases (not verified). M6/M7 have the same problem (`0.03225` → 32 nm against a 32 nm gap) but report no new violations on this design. gdscheck now marks M4–M7 `S.4`/`S.5` as `tech_lef: partial`. See §6 for the LEF fix.
 
 **Agreement with KLayout.** On the earlier baseline (§2), all 129 KLayout `M4.S.5` pairs matched gdscheck markers, so the 1 nm overlaps are flagged by both decks. KLayout's `M4.S.4` expression checks facing walls rather than same-side tips (§2), so it is not an independent check of the 61 `.S.4` markers. Their validity rests on gdscheck's reading of DRM Fig. 3.14.2(d), which treats aligned tips as clean.
+
+## 5. M1 spacing markers against the tech LEF's end-of-line keep-out
+
+**Layout and report.** The V6 cut-pitch trial (`build/v6_cut_pitch_xy_trial/sha256/sha256_official/write.gds/0/outputs/sha256.gds.gz`, sha256 `868c437b…a7c9`; `add_pdn_connect -layers {M6 M7} -cut_pitch {0.333 0.077}`). The gdscheck main suite at commit `42ce435` reports **7,620** markers, including `M1.S.2` 2,210, `M1.S.4` 508, `M1.S.5` 77 and `M1.S.6` 73. The standard cells on their own are DRC clean, and every one of these M1 markers sits at or next to a router `VIA12` M1 pad.
+
+**What the LEF states for M1.** LambdaPDK's `asap7_tech.lef` (the ASAP7 1x tech LEF, unchanged) has three M1 spacing statements:
+- `SPACING 0.018`, which is DRM `M1.S.1`;
+- `LEF58_EOLKEEPOUT 0.01825 EXTENSION 0.0 0.0 0.031`, a 31 nm keep-out in front of a line end at most 18.25 nm wide;
+- `LEF58_CORNERSPACING ... SPACING 0.018`.
+
+It has nothing for the DRM's edge-length rules as such. gdscheck therefore marks `M1.S.2`/`.S.4`/`.S.5` as `tech_lef: partial`, `M1.S.3` as `absent` and `M1.S.6` as `weaker`.
+
+**Method.** Each marker is the closest-approach segment between two facing M1 edges. Both edges were recovered from the merged top-cell M1. A marker counts as **covered** by the keep-out if either facing edge is an end-of-line edge and the other edge overlaps the 31 nm strip in front of it by more than a point. An end-of-line edge here is one shorter than 18.25 nm with both corners convex. The extension values are read as backward 0, side 0, forward 31 nm, so the strip is exactly as wide as the line end. `M1.S.6` is corner-to-corner, which that strip cannot cover, so it was compared with the LEF's 18 nm corner spacing instead. Per-marker results are in [`drc_findings/sha256_v6_cut_pitch_m1_eol_keepout.csv`](drc_findings/sha256_v6_cut_pitch_m1_eol_keepout.csv): the edge lengths, whether the gap lies inside one polygon, and whether a `VIA12` pad is at the marker. Nets were not resolved.
+
+| Rule | Markers | Covered by the keep-out | Not covered |
+| --- | ---: | ---: | ---: |
+| `M1.S.2` (≥25 nm) | 2,210 | 1 | 2,209 |
+| `M1.S.4` (≥31 nm) | 508 | **417** | 91 |
+| `M1.S.5` (≥31 nm) | 77 | **25** | 52 |
+| `M1.S.6` (≥20 nm corner) | 73 | n/a: all 19.3 nm, above the LEF's 18 nm | 73 |
+| **Total** | **2,868** | **443** | **2,425** |
+
+**Not covered (2,425): a gap in the LEF.**
+- `M1.S.2`: neither facing edge is a line end by the LEF's definition. Typical pairs are a 22 nm `VIA12` pad side facing a 99 or 180 nm pin edge, or an 11 nm or 4 nm jog edge with a concave corner.
+- `M1.S.4` (91) and `M1.S.5` (52): these are gaps inside a single polygon. The short edge has a concave corner, so the LEF does not treat it as a line end.
+- `M1.S.6`: every marker clears the LEF's 18 nm corner spacing and fails only the DRM's 20 nm.
+
+None of these is a rule the router was given, so the zero OpenROAD violation count says nothing about them.
+
+**Covered (443): the LEF keep-out applies, yet OpenROAD reported zero violations.** All 443 are between two separate polygons, not inside one, and all sit next to a `VIA12` pad.
+- `M1.S.4` (417): typically an 18 nm tip of cell obstruction (LEF `OBS`) metal with the router's pad 22 nm in front of it, e.g. `(3.042–3.064, 43.5095) µm`; 392 also have router M1 nearby (mostly DFFASRHQNx1 sites).
+- `M1.S.5` (25): an 18 nm obstruction tip 30 nm from a cell pin whose edge a pad has lengthened to 27 nm, e.g. `(16.990, 35.415–35.445) µm`.
+- `M1.S.2` (1): a 24 nm gap in front of an 18 nm tip at `(22.383, 49.222–49.246) µm`.
+
+**Resolved with OpenROAD's checker.** On the routed database (`route.detailed_antenna_repair` output, OpenROAD 26Q3), `drt::check_drc` reports **no** M1 violations. Nets and owners were resolved from the database: every one of the 443 has cell obstruction metal on one side, and the router's `VIA12` pad (418) or a cell pin (25) on the other. Checked against OpenROAD's source and by experiment:
+- **The order of the extension values is as assumed** (backward, side, forward; `lefTechLayerEolKeepOutRuleParser.cpp`).
+- **Different nets are not exempt.** `check_drc` itself reports 41 single-net keep-out violations on M3.
+- **The cell LEF abstracts match the GDS.** For DFFASRHQNx1, OAI21x1, BUFx2 and TIEHIx1, the LEF M1 (pins + `OBS`) equals the GDS M1.
+- **The cause: the stored line-end width is 18, not 18.25.** OpenROAD stores LEF distances as `lround(value × 1000)` for `DATABASE MICRONS 1000`. Its line-end test is `length < eolWidth`, so no 18 nm tip is ever a line end. Raising the stored width to 19 on the same database makes `check_drc` report 1,164 M1 keep-out violations, including all 417 `M1.S.4` and the 1 `M1.S.2`. The rest (746) are where the 31 nm keep-out is stricter than the DRM.
+- **The 25 `M1.S.5` markers are not affected:** both shapes are fixed cell metal, a pair OpenROAD's checker deliberately skips. The router's pad does not move either shape; it only lengthens the pin's facing edge into the DRM's mid-length class.
+
+**Summary of the 7,620 markers on this layout.**
+- **633** are rules the LEF does encode, but in values that a 1 nm database rounds into ineffectiveness: the 418 M1 keep-out cases above, and the 215 `M4`/`M5` `S.4`/`S.5` markers (§4). See §6.
+- **6,987** are rules the tech LEF lacks, only partly covers, or states weaker: `V1.M1.EN.1` (4,228), `V0.M1.AUX.3` (309), the 2,425 uncovered M1 markers above, and the 25 `M1.S.5` markers between fixed cell shapes.
+
+None of the 7,620 is a router failing to enforce a rule as it was stored.
+
+Two of gdscheck's DRM readings also affect the counts. 2,238 of the `V1.M1.EN.1` markers fail only because the 5 nm and 2 nm margins must be on opposite sides. 909 M1 spacing markers are gaps inside one polygon, which would drop if the DRM's "two M1 polygons' edges" excludes them.
+
+## 6. Quarter-nanometre values in the tech LEF
+
+The ASAP7 1x tech LEF (and LambdaPDK's copy) declares `UNITS DATABASE MICRONS 1000` and `MANUFACTURINGGRID 0.001`, but writes several values on a 0.25 nm grid. OpenROAD stores LEF distances as `lround(value × 1000)` (`odb/lefin.h`). Every value that is not a whole nanometre was read back from an OpenROAD database loaded from the LEF and checked against the comparison OpenROAD's router makes with it (OpenROAD source as of `aea554fa3f`):
+
+| Layer: rule | LEF → stored | Router comparison | Effect |
+| --- | --- | --- | --- |
+| M1 `EOLKEEPOUT` line-end width | 0.01825 → 18 nm | `length < eolWidth` | **Disabled for 18 nm tips** (§5). Needs 0.019. |
+| M4/M5 `EOLKEEPOUT` side extension | 0.02425 → 24 nm | corner strictly inside | **Misses the adjacent track** (§4). Needs 0.025. |
+| M6/M7 `EOLKEEPOUT` side extension | 0.03225 → 32 nm | corner strictly inside | **Same.** Needs 0.033. |
+| M8/M9 `SPACINGTABLE` widths and run lengths (0.05975 … 0.99975; 0.39975, 1.19975, 1.79975) | rounded up to 60 … 1,000 and 400, 1,200, 1,800 nm | row/column applies when the value is greater than its threshold | **A width or run exactly on the DRM threshold falls into the row below.** The table differs only in the 500/1,000 nm rows beyond a 1,800 nm run, so the effect is limited there. Needs rounding down (0.059 … 0.999; 0.399, 1.199, 1.799). Source analysis only; this design has no M8/M9. |
+| M2/M3 `EOLKEEPOUT` side extension | 0.0125 → 13 nm | strictly inside | Equivalent for whole-nm geometry. |
+| M3 `LEF58_SPACING ... WITHIN` | 0.0125 → 13 nm | query box | Equivalent for strict tests; on-grid M3 neighbours are 18 nm away. |
+| M6/M7 `LEF58_SPACING ENDOFLINE` width | 0.0375 → 38 nm | `length < eolWidth` | Equivalent. |
+| V3/V5 `LEF58_ENCLOSURE ... EOL` width | 0.02425 → 24 nm | `width ≤ value`, used only to generate secondary vias | Equivalent. Separately, OpenROAD's checker never applies these EOL enclosure rules. |
+| M6/M7 `AREA` | 2,187.5 → 2,188 nm² | area ≥ minimum | Equivalent. |
+| `VIARULE M4_M3widePWR0p864` widths | [233.5, 234.5] → [234, 235]; [215.5, 216.5] → [216, 217] nm | width range | Still includes the intended 234 / 216 nm. |
+
+**LEF fix (not yet upstream).** On branch `asap7-m1-eolkeepout` of the local LambdaPDK clone, based on `upstream/main` `15c783c`, the three effective cases are changed to whole-nanometre values that preserve the intended behaviour. Each change has a comment in the LEF explaining it:
+- M1 `0.01825` → `0.019`;
+- M4/M5 `0.02425` → `0.025`; M6/M7 `0.03225` → `0.033`;
+- the M8/M9 table thresholds rounded down.
+
+OpenROAD reads the patched LEF without warnings and stores 19, 25, 33 and the rounded-down thresholds. The fix is committed as LambdaPDK `be6ee59` (branch `asap7-m1-eolkeepout`, not yet pushed or proposed upstream). The flow rerun with it is in §7.
+
+## 7. SHA-256 rerun with the patched tech LEF
+
+**Setup.** This is the V6 cut-pitch trial (§5) with one change: the ASAP7 tech LEF comes from LambdaPDK `be6ee59`. Upstream LambdaPDK's tech LEF (`15c783c`) is byte-identical to the v0.2.22 copy the earlier runs loaded, so the four whole-nanometre fixes of §6 are the only difference. The runner `build/lambdapdk_lef_fix_trial/run_trial.py` calls `open_flow/run_sha256.py`'s `make_chip` unchanged, then swaps in two files:
+- the trial's `pdn_v6_cut_pitch.tcl`;
+- the tech LEF (`library/asap7/fileset/views.lef`), through a separate `lambdapdk_patched` data root.
+
+No repository file or installed package was changed. Output: `build/lambdapdk_lef_fix_trial/sha256/sha256_official/write.gds/0/outputs/sha256.gds.gz` (sha256 `f668a1a1…ce1e`). Reports are from gdscheck `3475644`, main suite.
+
+**Routing.** Detailed routing converged to **0** violations, antenna repair found none, and GDS export completed. Compared with the V6 trial:
+
+| | V6 trial | Patched LEF |
+| --- | ---: | ---: |
+| Final detailed-route violations | 0 | 0 |
+| Wirelength | 53,798 µm | 53,790 µm |
+| Vias | 130,756 | 130,984 (+0.17%) |
+| `route.detailed` task time | 156 s | 191 s (+22%) |
+| Setup WNS / hold WNS | −1,411 / −4.06 | identical |
+| Setup violation count | 1,558 | 1,559 |
+
+On this design, re-enabling the stricter-than-DRM M4–M7 keep-out cost no routability.
+
+**gdscheck main suite: 7,620 → 6,455.**
+
+| Rule | V6 trial | Patched LEF | Change |
+| --- | ---: | ---: | ---: |
+| `M4.S.4` / `M4.S.5` / `M5.S.5` | 61 / 153 / 1 | 0 / 0 / 0 | −215 |
+| `M1.S.4` | 508 | 91 | −417 |
+| `M1.S.2` | 2,210 | 2,147 | −63 |
+| `M1.S.5` | 77 | 55 | −22 |
+| `M1.S.6` | 73 | 72 | −1 |
+| `V1.M1.EN.1` | 4,228 | 3,801 | −427 |
+| `V0.M1.AUX.3` | 309 | 289 | −20 |
+| **Total** | **7,620** | **6,455** | **−1,165** |
+
+**Against the predictions of §4–§5.** The 215 M4/M5 markers and the 417 keep-out-covered `M1.S.4` markers are gone, as predicted. The §5 method was rerun on the new layout ([`drc_findings/sha256_lambdapdk_lef_fix_m1_eol_keepout.csv`](drc_findings/sha256_lambdapdk_lef_fix_m1_eol_keepout.csv)): **none** of the 2,365 remaining M1 spacing markers is covered by the LEF keep-out.
+- The 91 `M1.S.4` markers are exactly the gaps inside one polygon.
+- `M1.S.2` and `M1.S.5` have no qualifying line end.
+- `M1.S.6` clears the LEF's 18 nm corner spacing.
+
+What remains on M1 is therefore rules the LEF lacks or only partly covers. The drops in `V1.M1.EN.1` (−427), `M1.S.2` (−63) and `V0.M1.AUX.3` (−20) were **not** predicted. They are consistent with the router choosing different pin-access points once the M1 keep-out applies, but the mechanism has not been traced.
+
+**OpenROAD's own checker.** `drt::check_drc` on the routed database confirms the patched values are in force (stored M1 line-end width 19, M4/M5 side extension 25). It reports 117 violations, against 70 on the V6 trial. Both counts are the same before and after antenna repair, so this is a standing gap between the router's final count (0) and a fresh `check_drc` of the saved database, not something antenna repair introduces. The extra 47 include 50 keep-out violations (42 on M1, 5 on M4, 3 on M5). None lies within 5 nm of a gdscheck marker, so they are presumably places where the LEF keep-out is stricter than the DRM. Why the router's count and `check_drc` disagree is an open OpenROAD question.
+
+**Remaining 6,455 markers**, all on rules the tech LEF lacks, only partly covers, or states weaker (with the §5 checker-reading caveats):
+- `V1.M1.EN.1` 3,801 and `V0.M1.AUX.3` 289 (absent);
+- `M1.S.2` 2,147, `M1.S.4` 91 and `M1.S.5` 55 (partial);
+- `M1.S.6` 72 (weaker).
+
+Two of gdscheck's DRM readings still apply. First, the opposite-sides reading of `V1.M1.EN.1`, which was not re-measured on this layout. Second, whether gaps inside one polygon count for M1 spacing: **887** of the M1 spacing markers are such gaps (741 `M1.S.2`, all 91 `M1.S.4`, all 55 `M1.S.5`), and they would drop if the DRM's "two M1 polygons' edges" excludes them.
+
+**Not checked:** LVS, power integrity and via current capacity for this run.
