@@ -149,12 +149,27 @@ The ASAP7 1x tech LEF (and LambdaPDK's copy) declares `UNITS DATABASE MICRONS 10
 | M6/M7 `AREA` | 2,187.5 → 2,188 nm² | area ≥ minimum | Equivalent. |
 | `VIARULE M4_M3widePWR0p864` widths | [233.5, 234.5] → [234, 235]; [215.5, 216.5] → [216, 217] nm | width range | Still includes the intended 234 / 216 nm. |
 
-**LEF fix (not yet upstream).** On branch `asap7-m1-eolkeepout` of the local LambdaPDK clone, based on `upstream/main` `15c783c`, the three effective cases are changed to whole-nanometre values that preserve the intended behaviour. Each change has a comment in the LEF explaining it:
+**LEF fix.** On branch `asap7-m1-eolkeepout` of LambdaPDK ([jeffhsu3/lambdapdk](https://github.com/jeffhsu3/lambdapdk/tree/asap7-m1-eolkeepout)), based on `upstream/main` `15c783c`, the three effective cases are changed to whole-nanometre values that preserve the intended behaviour. Each change has a comment in the LEF explaining it:
 - M1 `0.01825` → `0.019`;
 - M4/M5 `0.02425` → `0.025`; M6/M7 `0.03225` → `0.033`;
 - the M8/M9 table thresholds rounded down.
 
-OpenROAD reads the patched LEF without warnings and stores 19, 25, 33 and the rounded-down thresholds. The fix is committed as LambdaPDK `be6ee59` (branch `asap7-m1-eolkeepout`, not yet pushed or proposed upstream). The flow rerun with it is in §7.
+OpenROAD reads the patched LEF without warnings and stores 19, 25, 33 and the rounded-down thresholds. The fix is committed as LambdaPDK `be6ee59`, and the flow rerun with it is in §7.
+
+**Where the LEF comes from, and the upstream PRs.** LambdaPDK's tech LEF is not its own:
+- It is byte-identical to `techlef_misc/asap7_tech_1x_201209.lef` in [The-OpenROAD-Project/asap7sc7p5t_28](https://github.com/The-OpenROAD-Project/asap7sc7p5t_28), the repository that [The-OpenROAD-Project/asap7](https://github.com/The-OpenROAD-Project/asap7) includes as a git submodule. LambdaPDK synced it in 2024.
+- That file was added there in November 2023. It matches OpenROAD-flow-scripts' `flow/platforms/asap7/lef/asap7_tech_1x_201209.lef` without the six VT implant layers ORFS added in 2025; the rule values are the same. The match is observed; no commit message says one was copied from the other. ORFS's file is the platform's `TECH_LEF`.
+- Both upstreams also carry `asap7_tech_1x_260907.lef`, a newer LEF that brings M1–M3 in line with the DRM (OpenROAD-flow-scripts#4532, asap7sc7p5t_28#9, merged September 2026). It has the same four rounded values.
+
+The same fix is proposed at every copy:
+
+| Repository | Files | PR |
+| --- | --- | --- |
+| siliconcompiler/lambdapdk | `asap7/base/apr/asap7_tech.lef` | [#246](https://github.com/siliconcompiler/lambdapdk/pull/246) |
+| The-OpenROAD-Project/OpenROAD-flow-scripts | `asap7_tech_1x_201209.lef`, `asap7_tech_1x_260907.lef` | [#4663](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/pull/4663) |
+| The-OpenROAD-Project/asap7sc7p5t_28 | `asap7_tech_1x_201209.lef`, `asap7_tech_1x_260907.lef` | [#10](https://github.com/The-OpenROAD-Project/asap7sc7p5t_28/pull/10) |
+
+Each upstream file was verified in OpenROAD after patching: no warnings, and the same stored values as above. The 4× LEF (`asap7_tech_4x_201209.lef`) holds these values as whole nanometres and is unaffected. In ORFS, the `201209` change affects every ASAP7 design, so the ORFS PR offers to restrict it to `260907`, as #4532 did. All three PRs were open at the time of writing.
 
 ## 7. SHA-256 rerun with the patched tech LEF
 
