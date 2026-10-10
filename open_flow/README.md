@@ -18,6 +18,10 @@ uv pip install --python .venv/bin/python 'siliconcompiler==0.38.10'
 .venv/bin/python open_flow/run_sha256.py                 # full P&R/GDS
 ```
 
+`--lambdapdk PATH` takes the ASAP7 tech LEF from a LambdaPDK checkout instead
+of the installed package; everything else is unchanged. See *Tech LEF rounding*
+below.
+
 The per-task timeout is 3600 seconds. Run the full flow in a durable terminal
 or managed background process; a caller's foreground timeout can still kill it.
 Outputs, logs and the generated manifest live in ignored `build/open_flow/`.
@@ -83,3 +87,41 @@ Post-route STA from the original ring run failed the 600 ps target: typical-corn
 was -661.10 ps, slow-corner setup WNS -1246.33 ps (reported Fmax 541.62 MHz),
 and fast-corner hold WNS -4.06 ps. These results are not directly comparable
 to the closed-source flow's modified PDK and Genus/Innovus implementation.
+
+## V6 cut spacing
+
+LambdaPDK's tech LEF spaces V6 cuts 0.034 um (`LEF58_SPACINGTABLE DEFAULT`),
+so pdngen tiled the M6/M7 power vias with 34 nm gaps, against the DRM's 45 nm
+(`V6.S.1`-`.S.3`): 624 gdscheck `V6.S.2` markers, three in each of 208 placed
+4-cut vias. `pdn_ring.tcl` sets `-cut_pitch {0.333 0.077}` on the M6/M7
+connection. The pitch is per axis: the cuts are 288 nm bars across the strap,
+so the x pitch, wider than the strap, keeps one column, and the y pitch is a
+32 nm cut plus the 45 nm gap. `{0.077 0.077}` instead overlaps the bars in x
+(OpenROAD reported a -211 nm x cut spacing). In the isolated run at
+`build/v6_cut_pitch_xy_trial`, each via kept four cuts with exactly 45 nm gaps,
+gdscheck's `V6.S.2` fell from 624 to 0, OpenROAD reported VDD/VSS connected and
+zero final routing violations. Via current capacity and LVS were not checked.
+
+## Tech LEF rounding
+
+LambdaPDK's ASAP7 tech LEF declares `DATABASE MICRONS 1000` but writes several
+rule values on a quarter nanometre, which OpenROAD rounds to the nearest
+nanometre. Three of them stop a rule from applying: M1's end-of-line keep-out
+width (0.01825 becomes 18 nm, so no minimum-width tip is a line end), M4-M7's
+keep-out side extension (0.02425/0.03225 become exactly the adjacent track's
+edge), and M8/M9's spacing-table thresholds. The fix is commit `be6ee59` on
+`asap7-m1-eolkeepout` of https://github.com/jeffhsu3/lambdapdk; the analysis is
+in `../ASAP7_ECOSYSTEM_DISCREPANCIES.md`, sections 5-7. To build with it:
+
+```sh
+git clone -b asap7-m1-eolkeepout https://github.com/jeffhsu3/lambdapdk ../lambdapdk
+.venv/bin/python open_flow/run_sha256.py --lambdapdk ../lambdapdk
+```
+
+Only the tech LEF is taken from the checkout. With it, the reference GDS in
+`reference-designs/asap7/sha256.gds.gz` (sha256 `f668a1a1...ce1e`, built in
+`build/lambdapdk_lef_fix_trial`) routed to zero final violations, and
+gdscheck's main suite reports 6,455 markers against 7,620 with the stock LEF.
+The removed ones are the M4/M5 `S.4`/`S.5` tip markers and the M1 spacing markers
+that the restored keep-out covers. Rebuilding can differ with tool and package
+versions.

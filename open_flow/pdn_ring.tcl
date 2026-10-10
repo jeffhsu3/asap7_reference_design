@@ -41,4 +41,9 @@ add_pdn_connect -grid stdcells -layers {M1 M2}
 # routing tracks (12 nm y origin, 48 nm pitch) instead of centering on M2 rails.
 add_pdn_connect -grid stdcells -layers {M2 M5} -min_width_layers {M3 M4} -ongrid {M4}
 add_pdn_connect -grid stdcells -layers {M5 M6}
-add_pdn_connect -grid stdcells -layers {M6 M7}
+# V6 cut spacing: LambdaPDK's LEF spaces V6 cuts 0.034 um (LEF58_SPACINGTABLE
+# DEFAULT), where the DRM asks 45 nm (V6.S.1-S.3).  The pitch is per axis: the
+# cuts are 288 nm bars across the strap, so x takes one column (0.333 um, wider
+# than the strap) and y the 45 nm gap (0.032 + 0.045).  {0.077 0.077} overlaps
+# the bars in x.
+add_pdn_connect -grid stdcells -layers {M6 M7} -cut_pitch {0.333 0.077}

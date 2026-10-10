@@ -44,6 +44,13 @@ source {%s}
             '-min_width_layers {M3 M4}', text
         )
 
+    def test_m6_m7_vias_space_cuts_by_the_drm_per_axis(self):
+        text = PDN.read_text()
+        self.assertIn(
+            'add_pdn_connect -grid stdcells -layers {M6 M7} '
+            '-cut_pitch {0.333 0.077}', text
+        )
+
     def test_m5_straps_use_minimum_width_by_default(self):
         for override in (None, '0'):
             script = '''

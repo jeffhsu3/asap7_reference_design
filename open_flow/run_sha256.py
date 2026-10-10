@@ -12,9 +12,11 @@ from siliconcompiler.targets import asap7_demo
 
 ROOT = Path(__file__).resolve().parents[1]
 RTL = ("sha256.v", "sha256_core.v", "sha256_k_constants.v", "sha256_w_mem.v")
+TECH_LEF = "lambdapdk/asap7/base/apr/asap7_tech.lef"
 
 
-def make_chip(to: str = "write.gds", builddir: Path | None = None) -> ASIC:
+def make_chip(to: str = "write.gds", builddir: Path | None = None,
+              lambdapdk: Path | None = None) -> ASIC:
     design = Design("sha256")
     design.add_file([str(ROOT / "sources" / name) for name in RTL],
                     fileset="rtl", filetype="verilog")
@@ -48,6 +50,13 @@ def make_chip(to: str = "write.gds", builddir: Path | None = None) -> ASIC:
     scenario.add_libcorner(["typical", "generic"])
     scenario.set_pexcorner("typical")
     scenario.add_check(["setup", "hold"])
+    if lambdapdk is not None:
+        # Take only the tech LEF from a LambdaPDK checkout; the cell libraries
+        # and everything else stay the installed package's.
+        pdk = chip.get("library", "asap7", field="schema")
+        pdk.set_dataroot("lambdapdk_checkout", str(lambdapdk.resolve()))
+        with pdk.active_dataroot("lambdapdk_checkout"):
+            pdk.add_file(TECH_LEF, fileset="views.lef", filetype="lef", clobber=True)
     chip.set("option", "to", to)
     return chip
 
@@ -57,10 +66,14 @@ def main() -> None:
     parser.add_argument("--to", default="write.gds",
                         help="End flow at a node (default: write.gds; synthesis for smoke test)")
     parser.add_argument("--builddir", type=Path, help="Override the build directory")
+    parser.add_argument("--lambdapdk", type=Path,
+                        help="Take the ASAP7 tech LEF from this LambdaPDK checkout")
     parser.add_argument("--check-only", action="store_true",
                         help="Validate and write manifest without running tools")
     args = parser.parse_args()
-    chip = make_chip(args.to, args.builddir)
+    chip = make_chip(args.to, args.builddir, args.lambdapdk)
+    pdk = chip.get("library", "asap7", field="schema")
+    print("tech LEF:", *pdk.find_files("fileset", "views.lef", "file", "lef"), flush=True)
     out = ROOT / "build" / "open_flow" / "sha256_official.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     chip.write_manifest(str(out))
